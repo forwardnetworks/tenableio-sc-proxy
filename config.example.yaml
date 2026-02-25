@@ -1,0 +1,46 @@
+mode: "prod"
+
+server:
+  listen_addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+tls:
+  enabled: true
+  auto_self_signed: true
+  cert_dir: "/tmp/tenableio-sc-proxy-tls"
+  rotate_days: 30
+
+security:
+  allowed_access_keys:
+    - "replace-with-tenable-access-key"
+  allowed_source_cidrs:
+    - "127.0.0.1/32"
+
+dev:
+  test_mode_enabled: false
+
+reliability:
+  serve_stale_on_upstream_error: true
+  max_stale: 24h
+
+tenable:
+  base_url: "https://cloud.tenable.com"
+  workbench_endpoint: "/workbenches/assets/vulnerabilities"
+  timeout: 30s
+  retry_max_attempts: 3
+  retry_backoff_min: 500ms
+  retry_backoff_max: 3s
+  insecure_skip_verify: false
+
+cache:
+  ttl: 5m
+  max_entries: 128
+
+log:
+  level: "info"
+  format: "json"
+  diagnostics: false
+  request_body_sample_bytes: 0
+  upstream_body_sample_bytes: 1024

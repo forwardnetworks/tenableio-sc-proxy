@@ -1,0 +1,63 @@
+mode: "dev"
+
+server:
+  listen_addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+tls:
+  enabled: true
+  auto_self_signed: true
+  cert_dir: "/tmp/tenableio-sc-proxy-tls"
+  rotate_days: 30
+
+security:
+  allowed_access_keys:
+    - "temp-forward-user"
+  allowed_source_cidrs:
+    - "127.0.0.1/32"
+
+dev:
+  test_mode_enabled: true
+  access_key: "temp-forward-user"
+  secret_key: "temp-forward-pass"
+  fake_rows:
+    - ip: "10.10.10.10"
+      dns_name: "dev-host-1.local"
+      mac_address: "00:11:22:33:44:55"
+      score: "180"
+      severity_medium: "3"
+      severity_high: "2"
+      severity_critical: "1"
+    - ip: "10.10.10.11"
+      dns_name: "dev-host-2.local"
+      mac_address: "00:11:22:33:44:66"
+      score: "95"
+      severity_medium: "5"
+      severity_high: "1"
+      severity_critical: "0"
+
+reliability:
+  serve_stale_on_upstream_error: true
+  max_stale: 24h
+
+tenable:
+  base_url: "https://cloud.tenable.com"
+  workbench_endpoint: "/workbenches/assets/vulnerabilities"
+  timeout: 30s
+  retry_max_attempts: 3
+  retry_backoff_min: 500ms
+  retry_backoff_max: 3s
+  insecure_skip_verify: false
+
+cache:
+  ttl: 5m
+  max_entries: 128
+
+log:
+  level: "debug"
+  format: "json"
+  diagnostics: true
+  request_body_sample_bytes: 1024
+  upstream_body_sample_bytes: 2048
