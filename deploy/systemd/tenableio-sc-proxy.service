@@ -1,0 +1,28 @@
+[Unit]
+Description=Tenable.io to Tenable.sc compatibility proxy for Forward
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tenableproxy
+Group=tenableproxy
+ExecStart=/usr/local/bin/tenableio-sc-proxy run --config /etc/tenableio-sc-proxy/config.yaml
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/tenableio-sc-proxy
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryDenyWriteExecute=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
