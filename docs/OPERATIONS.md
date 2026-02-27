@@ -3,17 +3,16 @@
 ## Startup Checklist
 
 1. Use `config.example.yaml` (prod mode) or equivalent hardened config.
-2. Confirm `dev.test_mode_enabled=false`.
-3. Confirm `security.allowed_access_keys` contains only authorized key IDs.
-4. Confirm `security.allowed_source_cidrs` contains collector host CIDRs.
-5. Confirm TLS endpoint is reachable and cert trust is pinned on collector host.
+2. Confirm `security.allowed_access_keys` contains only authorized key IDs.
+3. Confirm `security.allowed_source_cidrs` contains collector host CIDRs.
+4. Confirm TLS endpoint is reachable and cert trust is pinned on collector host.
 
 ## Health Checks
 
 - Liveness: `GET /healthz`
 - Readiness: `GET /readyz`
 
-Readiness will fail when critical hardening constraints are violated (e.g. dev mode in prod).
+Readiness will fail when critical hardening constraints are violated.
 
 ## Debug Mode for Customer Validation
 

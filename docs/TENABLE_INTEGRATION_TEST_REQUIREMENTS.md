@@ -72,9 +72,6 @@ security:
     - "127.0.0.1/32"
     - "<FORWARD_COLLECTOR_IP_OR_CIDR>"
 
-dev:
-  test_mode_enabled: false
-
 reliability:
   serve_stale_on_upstream_error: true
   max_stale: 24h
