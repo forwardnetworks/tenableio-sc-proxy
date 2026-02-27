@@ -58,7 +58,7 @@ Diagnostics mode logs:
 
 ## Documentation
 
-- Testing requirements template: `docs/TENABLE_INTEGRATION_TEST_REQUIREMENTS.md`
+- Forward VM setup and validation handoff: `docs/TENABLE_INTEGRATION_TEST_REQUIREMENTS.md`
 - Operations runbook: `docs/OPERATIONS.md`
 
 ## Commands

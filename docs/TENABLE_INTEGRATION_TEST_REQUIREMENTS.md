@@ -1,115 +1,207 @@
-# Forward Tenable.io Integration Validation Requirements
+# Forward Tenable.io Integration Handoff Runbook (Oracle Linux)
 
 ## Purpose
 
-This document defines a lightweight validation plan to confirm Forward can successfully collect and use Tenable.io data through the provided integration endpoint.
+This is a handoff-ready runbook for deploying and validating the Tenable.io integration endpoint on a Forward VM running Oracle Linux.
+
+## Outcome
+
+When complete, Forward can run Tenable collection successfully using these settings:
+
+- URL: `https://<FORWARD_VM_OR_FQDN>:8080`
+- Disable SSL Validation: `enabled` (required when using self-signed TLS)
+- Credential username: `<TENABLE_ACCESS_KEY>`
+- Credential password: `<TENABLE_SECRET_KEY>`
 
 ## Scope
 
 ### In Scope
 
-- Forward configuration for Tenable integration testing
-- End-to-end collection execution from Forward
-- Validation of expected data and operational outcomes in Forward
+- Oracle Linux setup on the Forward VM
+- `systemd` service install and startup
+- Proxy config required for Forward collection
+- Exact Forward settings to enter
+- Validation and troubleshooting checks
 
 ### Out of Scope
 
-- Internal implementation details of the integration endpoint
-- Endpoint service design, deployment, or component-level behavior
+- Internal endpoint implementation details
+- Component-level code behavior and design review
 
-## Test Objectives
+## Prerequisites
 
-1. Verify Forward can authenticate and run a Tenable collection successfully.
-2. Verify expected Tenable-derived results are visible in Forward.
-3. Verify repeated runs are stable and produce consistent results.
+1. Forward VM (Oracle Linux) with sudo access.
+2. Tenable.io access key and secret key for testing.
+3. Collector source IP/CIDR that will call the endpoint.
+4. This repo checked out on the Forward VM.
 
-## Environment Requirements
+## Step 1: Install Binary and Runtime User
 
-### Systems
+Run on the Forward VM:
 
-- One Forward instance with collector access
-- One Tenable.io test tenant with representative test data
-- One integration endpoint URL provided to the test team
+```bash
+sudo useradd --system --home-dir /var/lib/tenableio-sc-proxy --shell /sbin/nologin tenableproxy 2>/dev/null || true
+sudo install -d -m 0750 -o tenableproxy -g tenableproxy /etc/tenableio-sc-proxy
+sudo install -d -m 0750 -o tenableproxy -g tenableproxy /var/log/tenableio-sc-proxy
+sudo install -m 0755 ./bin/tenableio-sc-proxy /usr/local/bin/tenableio-sc-proxy
+```
 
-### Network
+## Step 2: Create Production Config
 
-- Forward collector can reach the provided endpoint over HTTPS
-- Forward platform/collector paths required for normal collection execution are reachable
+Create `/etc/tenableio-sc-proxy/config.yaml`:
 
-### Credentials and Access
+```yaml
+mode: "prod"
 
-- Forward integration credentials available for test use
-- Tenable.io credentials/API access approved for test scope
-- Required user roles in Forward to configure and run the integration
+server:
+  listen_addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 30s
+  idle_timeout: 60s
 
-## Inputs Required Before Testing
+tls:
+  enabled: true
+  auto_self_signed: true
+  cert_dir: "/tmp/tenableio-sc-proxy-tls"
+  rotate_days: 30
 
-1. Endpoint connection details (URL, TLS trust expectations, and any certificate requirements).
-2. Test account/credential handling procedure (including who rotates or revokes after test).
-3. Approved test dataset scope in Tenable.io.
-4. Success criteria for pilot acceptance.
-5. Point-of-contact list for test execution and issue escalation.
+security:
+  allowed_access_keys:
+    - "<TENABLE_ACCESS_KEY>"
+  allowed_source_cidrs:
+    - "127.0.0.1/32"
+    - "<FORWARD_COLLECTOR_IP_OR_CIDR>"
 
-## Forward Validation Procedure
+dev:
+  test_mode_enabled: false
 
-### Step 1: Pre-Flight Checks
+reliability:
+  serve_stale_on_upstream_error: true
+  max_stale: 24h
 
-- Confirm credentials are valid.
-- Confirm Forward can reach the integration endpoint.
-- Confirm collection schedule or manual trigger method is defined.
+tenable:
+  base_url: "https://cloud.tenable.com"
+  workbench_endpoint: "/workbenches/assets/vulnerabilities"
+  timeout: 30s
+  retry_max_attempts: 3
+  retry_backoff_min: 500ms
+  retry_backoff_max: 3s
+  insecure_skip_verify: false
 
-### Step 2: Configure Integration in Forward
+cache:
+  ttl: 5m
+  max_entries: 128
 
-- Enter provided endpoint URL in the Tenable integration settings.
-- Configure required credentials in Forward.
-- Save and validate configuration syntax/connection status.
+log:
+  level: "info"
+  format: "json"
+  diagnostics: false
+  request_body_sample_bytes: 0
+  upstream_body_sample_bytes: 1024
+```
 
-### Step 3: Execute Collection
+Apply secure ownership/permissions:
 
-- Run a manual collection (or wait for scheduled run).
-- Capture collection start/end times and run identifier.
+```bash
+sudo chown root:tenableproxy /etc/tenableio-sc-proxy/config.yaml
+sudo chmod 0640 /etc/tenableio-sc-proxy/config.yaml
+```
 
-### Step 4: Validate Results in Forward
+## Step 3: Validate Config Before Service Start
 
-- Confirm collection run completes without fatal errors.
-- Confirm expected Tenable-derived entities/results are present.
-- Confirm record counts and key fields are within expected tolerance.
+```bash
+sudo /usr/local/bin/tenableio-sc-proxy configtest --config /etc/tenableio-sc-proxy/config.yaml
+```
 
-### Step 5: Re-Run for Stability
+Expected output:
 
-- Execute at least one additional run.
-- Confirm no unexpected regressions in completion status or data quality.
+- `config ok`
 
-## Optional Extended Checks
+## Step 4: Install and Start systemd Service
 
-- Invalid credential test to verify expected authentication failure path.
-- Temporary upstream unavailability test to verify expected error visibility.
-- Performance sampling for runtime and data volume baselines.
+Install service unit from repo:
 
-## Entry Criteria
+```bash
+sudo install -m 0644 ./deploy/systemd/tenableio-sc-proxy.service /etc/systemd/system/tenableio-sc-proxy.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tenableio-sc-proxy
+sudo systemctl status tenableio-sc-proxy --no-pager
+```
 
-- Inputs and contacts are confirmed.
-- Environment and credentials are ready.
-- Test window is approved.
+Tail logs:
 
-## Exit Criteria
+```bash
+sudo journalctl -u tenableio-sc-proxy -n 100 --no-pager
+```
 
-- Required Forward validation steps complete successfully.
-- Evidence package is captured and reviewed.
-- Any open defects have owner, severity, and follow-up date.
+## Step 5: Configure Forward Integration Settings
 
-## Required Evidence Artifacts
+In Forward Tenable integration settings, enter exactly:
 
-- Forward integration configuration snapshot (secrets redacted)
-- Collection run IDs/status screenshots or exports
-- Data validation notes (what was expected vs what was observed)
-- Error details for any failed test step
-- Final pass/fail summary
+1. URL: `https://<FORWARD_VM_OR_FQDN>:8080`
+2. Disable SSL Validation: `enabled` (for self-signed TLS)
+3. Credential username: `<TENABLE_ACCESS_KEY>`
+4. Credential password: `<TENABLE_SECRET_KEY>`
 
-## Approval
+Important mapping:
 
-- Test Lead: `TBD`
-- Forward Integration Owner: `TBD`
-- Security Reviewer: `TBD`
-- Planned Test Window: `TBD`
-- Document Version: `v0.2`
+- Forward credential username must match `security.allowed_access_keys`.
+- Forward collector source IP must be included in `security.allowed_source_cidrs`.
+
+## Step 6: Validate Service Locally on Forward VM
+
+Health/readiness checks:
+
+```bash
+curl -kfsS https://127.0.0.1:8080/healthz
+curl -kfsS https://127.0.0.1:8080/readyz
+```
+
+Optional direct endpoint probe (before running from Forward UI):
+
+```bash
+ACCESS_KEY='<TENABLE_ACCESS_KEY>'
+SECRET_KEY='<TENABLE_SECRET_KEY>'
+curl -skS https://127.0.0.1:8080/rest/analysis \
+  -H "x-apikey: accesskey=${ACCESS_KEY}; secretkey=${SECRET_KEY};" \
+  -H 'content-type: application/json' \
+  --data '{"query":{"type":"vuln","tool":"sumip","startOffset":0,"endOffset":5,"filters":[{"filterName":"lastSeen","operator":"=","value":"0:1"}]},"sourceType":"cumulative","type":"vuln"}'
+```
+
+Expected result:
+
+- HTTP `200` with JSON envelope and `error_code: 0`.
+
+## Step 7: Validate from Forward
+
+1. Save the Forward integration settings.
+2. Run one manual collection.
+3. Confirm run completes without fatal error.
+4. Confirm Tenable-derived data appears in Forward.
+5. Run one more collection and confirm stability.
+
+## Troubleshooting Quick Map
+
+- `401 unauthorized: invalid x-apikey`:
+  - Re-check Forward credential format/values.
+- `401 unauthorized: access key is not allowed`:
+  - Add the credential username to `security.allowed_access_keys`.
+- `403 forbidden: source IP not allowed`:
+  - Add collector IP/CIDR to `security.allowed_source_cidrs`.
+- `502 upstream fetch failed`:
+  - Verify Tenable.io credentials and outbound HTTPS from VM.
+- `/readyz` not ready:
+  - Re-run `configtest` and fix config validation errors.
+
+## Handoff Checklist
+
+1. Service installed and active via `systemd`.
+2. Local `healthz` and `readyz` pass.
+3. Forward settings entered exactly as documented.
+4. One successful Forward collection completed.
+5. Evidence captured: service status, logs, and Forward run result.
+
+## Document Metadata
+
+- Version: `v0.3`
+- Target Platform: `Oracle Linux on Forward VM`
