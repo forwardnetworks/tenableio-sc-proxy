@@ -84,7 +84,7 @@ func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
 		s.writeSCError(w, http.StatusUnauthorized, 1001, "unauthorized: invalid x-apikey", 0, 0)
 		return
 	}
-	if !auth.IsAllowed(creds.AccessKey, s.cfg.Security.AllowedAccessKeys) {
+	if len(s.cfg.Security.AllowedAccessKeys) > 0 && !auth.IsAllowed(creds.AccessKey, s.cfg.Security.AllowedAccessKeys) {
 		s.logger.Warn("request rejected: access key not allowlisted", "request_id", reqID, "remote_ip", remoteIP, "access_key_hash", accessKeyHash(creds.AccessKey))
 		s.writeSCError(w, http.StatusUnauthorized, 1002, "unauthorized: access key is not allowed", 0, 0)
 		return
@@ -322,9 +322,6 @@ func (s *Server) devRows() []forwardsc.SumipHost {
 }
 
 func (s *Server) Ready() (bool, string) {
-	if len(s.cfg.Security.AllowedAccessKeys) == 0 {
-		return false, "missing allowed access keys"
-	}
 	if s.cfg.Mode == "prod" && s.cfg.Dev.TestModeEnabled {
 		return false, "dev test mode enabled in prod"
 	}

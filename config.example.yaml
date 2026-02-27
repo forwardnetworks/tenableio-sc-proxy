@@ -13,8 +13,6 @@ tls:
   rotate_days: 30
 
 security:
-  allowed_access_keys:
-    - "replace-with-tenable-access-key"
   allowed_source_cidrs:
     - "127.0.0.1/32"
 

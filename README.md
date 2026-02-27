@@ -13,9 +13,13 @@ go run ./cmd/proxy run --config ./config.example.yaml
 In Forward Tenable SC settings:
 
 - URL: `https://<proxy-host>:8080`
-- Disable SSL Validation: enabled
+- Disable SSL Validation:
+  - `enabled` for self-signed TLS (`tls.auto_self_signed=true`)
+  - `disabled` for trusted custom cert (`tls.auto_self_signed=false` + cert/key files)
 - Credential username: `<TENABLE_ACCESS_KEY>`
 - Credential password: `<TENABLE_SECRET_KEY>`
+
+Forward credentials are passed through to Tenable.io as `accessKey/secretKey`.
 
 Operational endpoints:
 
@@ -34,6 +38,10 @@ In `tenable` config:
 - `page_limit`: number of assets requested per upstream page (default `5000`)
 - `max_pages`: hard stop to prevent runaway pagination (default `200`)
 - `dedupe_by_ip`: merge duplicate assets by IP before response to Forward
+
+Optional key allowlist (without YAML secrets):
+
+- set `PROXY_ALLOWED_ACCESS_KEYS=ak1,ak2` in service environment
 
 ## Debug Logging
 

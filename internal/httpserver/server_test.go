@@ -111,6 +111,32 @@ func TestAnalysisUnauthorizedInbound(t *testing.T) {
 	}
 }
 
+func TestAnalysisNoAccessKeyAllowlistAcceptsAnyKey(t *testing.T) {
+	fc := &fakeClient{hosts: []tenableio.HostAggregate{{IP: "10.0.0.1", Medium: 1, High: 1, Critical: 1}}}
+	cfg := config.Config{
+		Security: config.SecurityConfig{
+			AllowedAccessKeys:  nil,
+			AllowedSourceCIDRs: []string{"127.0.0.1/32"},
+		},
+		Cache:   config.CacheConfig{TTL: time.Second, MaxEntries: 10},
+		Tenable: config.TenableConfig{WorkbenchEndpoint: "/x"},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := New(cfg, logger, fc, "test")
+
+	body := []byte(`{"query":{"type":"vuln","tool":"sumip","startOffset":0,"endOffset":10,"filters":[{"filterName":"lastSeen","operator":"=","value":"0:1"}]},"sourceType":"cumulative","type":"vuln"}`)
+	req := httptest.NewRequest(http.MethodPost, "/rest/analysis", bytes.NewReader(body))
+	req.Header.Set("x-apikey", "accesskey=any-key; secretkey=sk1;")
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 without allowlist, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAnalysisDevModeBypass(t *testing.T) {
 	fc := &fakeClient{}
 	cfg := config.Config{

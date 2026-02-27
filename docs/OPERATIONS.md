@@ -3,9 +3,34 @@
 ## Startup Checklist
 
 1. Use `config.example.yaml` (prod mode) or equivalent hardened config.
-2. Confirm `security.allowed_access_keys` contains only authorized key IDs.
-3. Confirm `security.allowed_source_cidrs` contains collector host CIDRs.
-4. Confirm TLS endpoint is reachable and cert trust is pinned on collector host.
+2. Confirm `security.allowed_source_cidrs` contains collector host CIDRs.
+3. Confirm TLS mode is set correctly:
+   - self-signed (`tls.auto_self_signed=true`) with Forward SSL validation disabled, or
+   - custom trusted cert (`tls.auto_self_signed=false`) with cert/key paths configured.
+4. Confirm endpoint is reachable from collector.
+
+## Optional Access-Key Allowlist (No Keys in YAML)
+
+If you want access-key allowlisting without putting keys in `config.yaml`, set environment variable
+`PROXY_ALLOWED_ACCESS_KEYS` (comma-separated).
+
+Example systemd drop-in:
+
+```bash
+sudo systemctl edit tenableio-sc-proxy
+```
+
+```ini
+[Service]
+Environment="PROXY_ALLOWED_ACCESS_KEYS=ak1,ak2"
+```
+
+Then apply:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart tenableio-sc-proxy
+```
 
 ## Health Checks
 
@@ -59,8 +84,9 @@ With diagnostics enabled, logs include per-run data quality counters:
 
 ### 401 from proxy
 
-- Check Forward credential values and allowlist key IDs.
+- Check Forward credential values.
 - Confirm `x-apikey` parsing format: `accesskey=...; secretkey=...;`.
+- If allowlist mode is enabled via `PROXY_ALLOWED_ACCESS_KEYS`, ensure key is listed.
 
 ### 403 from proxy
 

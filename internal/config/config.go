@@ -31,6 +31,7 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
+	// Optional: if empty, access keys are not allowlisted and any key from allowed source CIDRs is accepted.
 	AllowedAccessKeys  []string `yaml:"allowed_access_keys"`
 	AllowedSourceCIDRs []string `yaml:"allowed_source_cidrs"`
 }
@@ -293,9 +294,6 @@ func (c Config) Validate() error {
 	}
 	if c.Reliability.MaxStale <= 0 {
 		return errors.New("reliability.max_stale must be > 0")
-	}
-	if len(c.Security.AllowedAccessKeys) == 0 {
-		return errors.New("security.allowed_access_keys must contain at least one key")
 	}
 	if c.Mode == "prod" {
 		if len(c.Security.AllowedSourceCIDRs) == 0 {

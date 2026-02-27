@@ -9,7 +9,7 @@ This is a handoff-ready runbook for deploying and validating the Tenable.io inte
 When complete, Forward can run Tenable collection successfully using these settings:
 
 - URL: `https://<FORWARD_VM_OR_FQDN>:8080`
-- Disable SSL Validation: `enabled` (required when using self-signed TLS)
+- Disable SSL Validation: `enabled` (if using self-signed TLS)
 - Credential username: `<TENABLE_ACCESS_KEY>`
 - Credential password: `<TENABLE_SECRET_KEY>`
 
@@ -66,8 +66,6 @@ tls:
   rotate_days: 30
 
 security:
-  allowed_access_keys:
-    - "<TENABLE_ACCESS_KEY>"
   allowed_source_cidrs:
     - "127.0.0.1/32"
     - "<FORWARD_COLLECTOR_IP_OR_CIDR>"
@@ -134,21 +132,42 @@ Tail logs:
 sudo journalctl -u tenableio-sc-proxy -n 100 --no-pager
 ```
 
-## Step 5: Configure Forward Integration Settings
+## Step 5: Choose TLS Mode
+
+### Option A (Default): Self-Signed TLS
+
+- Keep:
+  - `tls.enabled: true`
+  - `tls.auto_self_signed: true`
+- In Forward, set **Disable SSL Validation** to `enabled`.
+
+### Option B (Optional): Custom Certificate
+
+- Set:
+  - `tls.enabled: true`
+  - `tls.auto_self_signed: false`
+  - `tls.cert_file: "<path-to-cert.pem>"`
+  - `tls.key_file: "<path-to-key.pem>"`
+- In Forward, set **Disable SSL Validation** to `disabled` after trust is configured.
+
+## Step 6: Configure Forward Integration Settings
 
 In Forward Tenable integration settings, enter exactly:
 
 1. URL: `https://<FORWARD_VM_OR_FQDN>:8080`
-2. Disable SSL Validation: `enabled` (for self-signed TLS)
+2. Disable SSL Validation:
+   - `enabled` for self-signed TLS
+   - `disabled` for trusted custom cert
 3. Credential username: `<TENABLE_ACCESS_KEY>`
 4. Credential password: `<TENABLE_SECRET_KEY>`
 
 Important mapping:
 
-- Forward credential username must match `security.allowed_access_keys`.
+- Forward username/password are passed through to Tenable as `accessKey/secretKey`.
 - Forward collector source IP must be included in `security.allowed_source_cidrs`.
+- Optional access-key allowlist can be enabled via `PROXY_ALLOWED_ACCESS_KEYS` if required.
 
-## Step 6: Validate Service Locally on Forward VM
+## Step 7: Validate Service Locally on Forward VM
 
 Health/readiness checks:
 
@@ -172,7 +191,7 @@ Expected result:
 
 - HTTP `200` with JSON envelope and `error_code: 0`.
 
-## Step 7: Validate from Forward
+## Step 8: Validate from Forward
 
 1. Save the Forward integration settings.
 2. Run one manual collection.
@@ -185,7 +204,7 @@ Expected result:
 - `401 unauthorized: invalid x-apikey`:
   - Re-check Forward credential format/values.
 - `401 unauthorized: access key is not allowed`:
-  - Add the credential username to `security.allowed_access_keys`.
+  - If using allowlist mode, add the key to `PROXY_ALLOWED_ACCESS_KEYS`.
 - `403 forbidden: source IP not allowed`:
   - Add collector IP/CIDR to `security.allowed_source_cidrs`.
 - `502 upstream fetch failed`:
