@@ -24,6 +24,24 @@ When onboarding new credentials or debugging failures:
 
 This logs request lifecycle, source-IP and allowlist rejects, upstream latency/failures, and cache path decisions without exposing raw API keys.
 
+## Escalated Debug Logging (Issue Reproduction)
+
+If a problem is intermittent or unclear, temporarily increase debug sampling:
+
+1. Set:
+   - `log.level: "debug"`
+   - `log.diagnostics: true`
+   - `log.request_body_sample_bytes: 2048`
+   - `log.upstream_body_sample_bytes: 8192`
+2. Restart service:
+   - `sudo systemctl restart tenableio-sc-proxy`
+3. Reproduce the issue once from Forward.
+4. Capture logs:
+   - `sudo journalctl -u tenableio-sc-proxy --since "15 min ago" --no-pager`
+5. Revert to baseline logging after capture (reduce sampling and/or return to `info` level).
+
+Note: higher sample sizes can increase sensitive payload exposure in logs. Use only for short troubleshooting windows.
+
 ## Data Gathering Controls
 
 - `tenable.page_limit`: upstream assets per request page (default `5000`).
