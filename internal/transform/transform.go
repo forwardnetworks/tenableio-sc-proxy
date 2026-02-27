@@ -5,18 +5,44 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/captainpacket/tenableio-sc-proxy/internal/forwardsc"
 	"github.com/captainpacket/tenableio-sc-proxy/internal/tenableio"
 )
 
+type Options struct {
+	DedupeByIP bool
+}
+
+type Stats struct {
+	InputRows               int
+	OutputRows              int
+	DroppedInvalidIP        int
+	DroppedNegativeSeverity int
+	DuplicatesMerged        int
+}
+
 func ToSumipRows(in []tenableio.HostAggregate) []forwardsc.SumipHost {
+	rows, _ := ToSumipRowsWithStats(in, Options{})
+	return rows
+}
+
+func ToSumipRowsWithStats(in []tenableio.HostAggregate, opts Options) ([]forwardsc.SumipHost, Stats) {
+	stats := Stats{
+		InputRows: len(in),
+	}
+
 	out := make([]forwardsc.SumipHost, 0, len(in))
+	byIP := map[string]int{}
 	for _, row := range in {
-		if net.ParseIP(row.IP) == nil {
+		ip := strings.TrimSpace(row.IP)
+		if net.ParseIP(ip) == nil {
+			stats.DroppedInvalidIP++
 			continue
 		}
 		if row.Medium < 0 || row.High < 0 || row.Critical < 0 {
+			stats.DroppedNegativeSeverity++
 			continue
 		}
 
@@ -29,15 +55,29 @@ func ToSumipRows(in []tenableio.HostAggregate) []forwardsc.SumipHost {
 			continue
 		}
 
-		out = append(out, forwardsc.SumipHost{
-			IP:               row.IP,
+		candidate := forwardsc.SumipHost{
+			IP:               ip,
 			DNSName:          row.DNSName,
 			MACAddress:       row.MACAddress,
 			Score:            strconv.Itoa(*score),
 			SeverityMedium:   strconv.Itoa(row.Medium),
 			SeverityHigh:     strconv.Itoa(row.High),
 			SeverityCritical: strconv.Itoa(row.Critical),
-		})
+		}
+
+		if !opts.DedupeByIP {
+			out = append(out, candidate)
+			continue
+		}
+
+		if idx, ok := byIP[candidate.IP]; ok {
+			stats.DuplicatesMerged++
+			merged := mergeRows(out[idx], candidate)
+			out[idx] = merged
+			continue
+		}
+		byIP[candidate.IP] = len(out)
+		out = append(out, candidate)
 	}
 
 	sort.Slice(out, func(i, j int) bool {
@@ -50,7 +90,38 @@ func ToSumipRows(in []tenableio.HostAggregate) []forwardsc.SumipHost {
 		return bytesCompareIP(out[i].IP, out[j].IP) < 0
 	})
 
-	return out
+	stats.OutputRows = len(out)
+	return out, stats
+}
+
+func mergeRows(existing, incoming forwardsc.SumipHost) forwardsc.SumipHost {
+	if strings.TrimSpace(existing.DNSName) == "" {
+		existing.DNSName = incoming.DNSName
+	}
+	if strings.TrimSpace(existing.MACAddress) == "" {
+		existing.MACAddress = incoming.MACAddress
+	}
+
+	existing.Score = strconv.Itoa(maxInt(parseInt(existing.Score), parseInt(incoming.Score)))
+	existing.SeverityMedium = strconv.Itoa(maxInt(parseInt(existing.SeverityMedium), parseInt(incoming.SeverityMedium)))
+	existing.SeverityHigh = strconv.Itoa(maxInt(parseInt(existing.SeverityHigh), parseInt(incoming.SeverityHigh)))
+	existing.SeverityCritical = strconv.Itoa(maxInt(parseInt(existing.SeverityCritical), parseInt(incoming.SeverityCritical)))
+	return existing
+}
+
+func parseInt(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func bytesCompareIP(a, b string) int {

@@ -39,6 +39,8 @@ type WorkbenchClient struct {
 	logger          *slog.Logger
 	baseURL         string
 	endpoint        string
+	pageLimit       int
+	maxPages        int
 	maxAttempts     int
 	retryBackoffMin time.Duration
 	retryBackoffMax time.Duration
@@ -47,21 +49,29 @@ type WorkbenchClient struct {
 }
 
 const (
-	workbenchPageLimit  = 5000
-	maxPageRequests     = 200
+	defaultPageLimit    = 5000
+	defaultMaxPages     = 200
 	maxResponseBodySize = 20 * 1024 * 1024
 )
 
-func NewWorkbenchClient(logger *slog.Logger, baseURL, endpoint string, timeout time.Duration, insecureSkipVerify bool, maxAttempts int, backoffMin, backoffMax time.Duration, diagnostics bool, bodySampleBytes int) *WorkbenchClient {
+func NewWorkbenchClient(logger *slog.Logger, baseURL, endpoint string, pageLimit, maxPages int, timeout time.Duration, insecureSkipVerify bool, maxAttempts int, backoffMin, backoffMax time.Duration, diagnostics bool, bodySampleBytes int) *WorkbenchClient {
 	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify}}
 	if bodySampleBytes < 0 {
 		bodySampleBytes = 0
+	}
+	if pageLimit < 1 {
+		pageLimit = defaultPageLimit
+	}
+	if maxPages < 1 {
+		maxPages = defaultMaxPages
 	}
 	return &WorkbenchClient{
 		httpClient:      &http.Client{Timeout: timeout, Transport: transport},
 		logger:          logger,
 		baseURL:         strings.TrimRight(baseURL, "/"),
 		endpoint:        endpoint,
+		pageLimit:       pageLimit,
+		maxPages:        maxPages,
 		maxAttempts:     maxAttempts,
 		retryBackoffMin: backoffMin,
 		retryBackoffMax: backoffMax,
@@ -81,23 +91,24 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 		c.logger.Info("tenable upstream collection start",
 			"base_url", c.baseURL,
 			"endpoint", c.endpoint,
-			"page_limit", workbenchPageLimit,
-			"max_pages", maxPageRequests,
+			"page_limit", c.pageLimit,
+			"max_pages", c.maxPages,
 			"max_attempts", c.maxAttempts,
 			"has_access_key", creds.AccessKey != "",
 			"has_secret_key", creds.SecretKey != "",
 		)
 	}
 
-	out := make([]HostAggregate, 0, workbenchPageLimit)
+	out := make([]HostAggregate, 0, c.pageLimit)
 	offset := 0
 	pages := 0
 	sourceField := "none"
+	metrics := parseMetrics{}
 	var previousBodyHash [32]byte
 	hasPreviousHash := false
 
-	for pages < maxPageRequests {
-		requestURL := pagedRequestURL(u, workbenchPageLimit, offset)
+	for pages < c.maxPages {
+		requestURL := pagedRequestURL(u, c.pageLimit, offset)
 		body, err := c.fetchWithRetry(ctx, requestURL, creds)
 		if err != nil {
 			return nil, err
@@ -128,6 +139,7 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 
 		pages++
 		out = append(out, page.Rows...)
+		metrics.add(page.Metrics)
 		if sourceField == "none" && page.SourceField != "none" {
 			sourceField = page.SourceField
 		}
@@ -143,6 +155,10 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 				"total_known", page.TotalKnown,
 				"total", page.Total,
 				"has_next", page.HasNext,
+				"parse_assets", page.Metrics.AssetsSeen,
+				"parse_score_fallback", page.Metrics.ScoreFallback,
+				"parse_severity_fallback", page.Metrics.SeverityFallback,
+				"parse_missing_ip", page.Metrics.MissingIP,
 			)
 		}
 
@@ -159,7 +175,7 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 			if offset >= page.Total {
 				stopPaging = true
 			}
-		case len(page.Rows) < workbenchPageLimit:
+		case len(page.Rows) < c.pageLimit:
 			stopPaging = true
 		}
 		if stopPaging {
@@ -167,8 +183,8 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 		}
 	}
 
-	if pages >= maxPageRequests {
-		c.logger.Warn("tenable upstream pagination stopped at max page limit", "max_pages", maxPageRequests, "rows_collected", len(out))
+	if pages >= c.maxPages {
+		c.logger.Warn("tenable upstream pagination stopped at max page limit", "max_pages", c.maxPages, "rows_collected", len(out))
 	}
 	if c.diagnostics {
 		c.logger.Info("tenable upstream collection complete",
@@ -176,6 +192,10 @@ func (c *WorkbenchClient) FetchHostAggregates(ctx context.Context, creds auth.Cr
 			"rows", len(out),
 			"source_field", sourceField,
 			"pages", pages,
+			"parse_assets_total", metrics.AssetsSeen,
+			"parse_score_fallback_total", metrics.ScoreFallback,
+			"parse_severity_fallback_total", metrics.SeverityFallback,
+			"parse_missing_ip_total", metrics.MissingIP,
 		)
 	}
 	return out, nil
@@ -326,6 +346,21 @@ type hostPage struct {
 	Total       int
 	TotalKnown  bool
 	HasNext     bool
+	Metrics     parseMetrics
+}
+
+type parseMetrics struct {
+	AssetsSeen       int
+	ScoreFallback    int
+	SeverityFallback int
+	MissingIP        int
+}
+
+func (m *parseMetrics) add(other parseMetrics) {
+	m.AssetsSeen += other.AssetsSeen
+	m.ScoreFallback += other.ScoreFallback
+	m.SeverityFallback += other.SeverityFallback
+	m.MissingIP += other.MissingIP
 }
 
 func parseHostPage(body []byte) (hostPage, error) {
@@ -353,15 +388,34 @@ func parseHostPage(body []byte) (hostPage, error) {
 	}
 
 	rows := make([]HostAggregate, 0, len(assets))
+	metrics := parseMetrics{AssetsSeen: len(assets)}
 	for _, asset := range assets {
-		medium := extractSeverityCount(asset, 2, "severityMedium", "medium_count", "severity_medium", "medium")
-		high := extractSeverityCount(asset, 3, "severityHigh", "high_count", "severity_high", "high")
-		critical := extractSeverityCount(asset, 4, "severityCritical", "critical_count", "severity_critical", "critical")
+		medium, mediumFallback := extractSeverityCount(asset, 2, "severityMedium", "medium_count", "severity_medium", "medium")
+		high, highFallback := extractSeverityCount(asset, 3, "severityHigh", "high_count", "severity_high", "high")
+		critical, criticalFallback := extractSeverityCount(asset, 4, "severityCritical", "critical_count", "severity_critical", "critical")
+		score, scoreFallback := extractScore(asset)
+		ip := extractFirstString(asset, "ipv4", "ip", "address", "ipv6")
+		if strings.TrimSpace(ip) == "" {
+			metrics.MissingIP++
+		}
+		if scoreFallback {
+			metrics.ScoreFallback++
+		}
+		if mediumFallback {
+			metrics.SeverityFallback++
+		}
+		if highFallback {
+			metrics.SeverityFallback++
+		}
+		if criticalFallback {
+			metrics.SeverityFallback++
+		}
+
 		row := HostAggregate{
-			IP:         extractFirstString(asset, "ipv4", "ip", "address", "ipv6"),
+			IP:         ip,
 			DNSName:    extractFirstString(asset, "fqdn", "dnsName", "hostname", "host_name"),
 			MACAddress: extractFirstString(asset, "macAddress", "mac_address", "mac"),
-			Score:      extractScore(asset),
+			Score:      score,
 			Medium:     medium,
 			High:       high,
 			Critical:   critical,
@@ -376,6 +430,7 @@ func parseHostPage(body []byte) (hostPage, error) {
 		Total:       total,
 		TotalKnown:  totalKnown,
 		HasNext:     extractHasNext(payload),
+		Metrics:     metrics,
 	}, nil
 }
 
@@ -429,13 +484,6 @@ func extractFirstString(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func extractFirstInt(m map[string]any, keys ...string) int {
-	if p := extractFirstIntPointer(m, keys...); p != nil {
-		return *p
-	}
-	return 0
 }
 
 func extractFirstIntPointer(m map[string]any, keys ...string) *int {
@@ -501,9 +549,9 @@ func extractHasNext(payload map[string]any) bool {
 	return false
 }
 
-func extractScore(asset map[string]any) *int {
+func extractScore(asset map[string]any) (*int, bool) {
 	if v := extractFirstIntPointer(asset, "score", "risk_score", "riskScore"); v != nil {
-		return v
+		return v, false
 	}
 	for _, key := range []string{"risk", "vpr"} {
 		raw, ok := asset[key]
@@ -515,15 +563,15 @@ func extractScore(asset map[string]any) *int {
 			continue
 		}
 		if v := extractFirstIntPointer(nested, "score", "risk_score", "riskScore", "value"); v != nil {
-			return v
+			return v, true
 		}
 	}
-	return nil
+	return nil, false
 }
 
-func extractSeverityCount(asset map[string]any, severityLevel int, directKeys ...string) int {
+func extractSeverityCount(asset map[string]any, severityLevel int, directKeys ...string) (int, bool) {
 	if p := extractFirstIntPointer(asset, directKeys...); p != nil {
-		return clampNonNegative(*p)
+		return clampNonNegative(*p), false
 	}
 
 	targetName := severityName(severityLevel)
@@ -535,7 +583,7 @@ func extractSeverityCount(asset map[string]any, severityLevel int, directKeys ..
 		switch t := raw.(type) {
 		case map[string]any:
 			if p := extractFirstIntPointer(t, targetName, strconv.Itoa(severityLevel)); p != nil {
-				return clampNonNegative(*p)
+				return clampNonNegative(*p), true
 			}
 		case []any:
 			for _, item := range t {
@@ -548,16 +596,16 @@ func extractSeverityCount(asset map[string]any, severityLevel int, directKeys ..
 					continue
 				}
 				if level := extractFirstIntPointer(obj, "level", "severity", "severityLevel", "id"); level != nil && *level == severityLevel {
-					return clampNonNegative(*count)
+					return clampNonNegative(*count), true
 				}
 				name := strings.ToLower(strings.TrimSpace(extractFirstString(obj, "name", "severity_name", "severityName")))
 				if name == targetName {
-					return clampNonNegative(*count)
+					return clampNonNegative(*count), true
 				}
 			}
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func severityName(level int) string {

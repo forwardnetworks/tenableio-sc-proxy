@@ -38,6 +38,14 @@ Response headers on `/rest/analysis`:
 - `X-Proxy-Cache: HIT|MISS|STALE|DEV|NONE`
 - `X-Proxy-Stale-Age-Seconds` when stale cache is served
 
+## Data Collection Tuning
+
+In `tenable` config:
+
+- `page_limit`: number of assets requested per upstream page (default `5000`)
+- `max_pages`: hard stop to prevent runaway pagination (default `200`)
+- `dedupe_by_ip`: merge duplicate assets by IP before response to Forward
+
 ## Debug Logging
 
 For customer onboarding and credential troubleshooting, enable:
@@ -53,6 +61,8 @@ Diagnostics mode logs:
 - access key hash (never logs raw keys)
 - upstream fetch latency/outcome
 - upstream URL, retry-attempt progression, HTTP status
+- parsed asset counters and fallback usage (score/severity extraction)
+- data quality counters (input rows, invalid IP drops, merged duplicates)
 - cache behavior (`HIT|MISS|STALE|DEV|NONE`)
 - end-to-end request duration
 

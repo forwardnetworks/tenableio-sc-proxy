@@ -69,6 +69,9 @@ type ReliabilityConfig struct {
 type TenableConfig struct {
 	BaseURL            string        `yaml:"base_url"`
 	WorkbenchEndpoint  string        `yaml:"workbench_endpoint"`
+	PageLimit          int           `yaml:"page_limit"`
+	MaxPages           int           `yaml:"max_pages"`
+	DedupeByIP         bool          `yaml:"dedupe_by_ip"`
 	Timeout            time.Duration `yaml:"timeout"`
 	RetryMaxAttempts   int           `yaml:"retry_max_attempts"`
 	RetryBackoffMin    time.Duration `yaml:"retry_backoff_min"`
@@ -136,6 +139,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Tenable.Timeout == 0 {
 		cfg.Tenable.Timeout = 30 * time.Second
 	}
+	if cfg.Tenable.PageLimit == 0 {
+		cfg.Tenable.PageLimit = 5000
+	}
+	if cfg.Tenable.MaxPages == 0 {
+		cfg.Tenable.MaxPages = 200
+	}
 	if cfg.Tenable.RetryMaxAttempts == 0 {
 		cfg.Tenable.RetryMaxAttempts = 3
 	}
@@ -202,6 +211,19 @@ func overrideFromEnv(cfg *Config) {
 	if v := os.Getenv("PROXY_TENABLE_WORKBENCH_ENDPOINT"); v != "" {
 		cfg.Tenable.WorkbenchEndpoint = v
 	}
+	if v := os.Getenv("PROXY_TENABLE_PAGE_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.Tenable.PageLimit = n
+		}
+	}
+	if v := os.Getenv("PROXY_TENABLE_MAX_PAGES"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.Tenable.MaxPages = n
+		}
+	}
+	if v := os.Getenv("PROXY_TENABLE_DEDUPE_BY_IP"); v != "" {
+		cfg.Tenable.DedupeByIP = strings.EqualFold(v, "true") || v == "1"
+	}
 	if v := os.Getenv("PROXY_DEV_TEST_MODE_ENABLED"); strings.EqualFold(v, "true") || v == "1" {
 		cfg.Dev.TestModeEnabled = true
 	}
@@ -250,6 +272,12 @@ func (c Config) Validate() error {
 	}
 	if c.Tenable.WorkbenchEndpoint == "" {
 		return errors.New("tenable.workbench_endpoint is required")
+	}
+	if c.Tenable.PageLimit < 1 {
+		return errors.New("tenable.page_limit must be >= 1")
+	}
+	if c.Tenable.MaxPages < 1 {
+		return errors.New("tenable.max_pages must be >= 1")
 	}
 	if c.Tenable.RetryMaxAttempts < 1 {
 		return errors.New("tenable.retry_max_attempts must be >= 1")

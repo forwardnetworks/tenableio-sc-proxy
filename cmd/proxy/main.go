@@ -52,6 +52,8 @@ func run(args []string) {
 		logger,
 		cfg.Tenable.BaseURL,
 		cfg.Tenable.WorkbenchEndpoint,
+		cfg.Tenable.PageLimit,
+		cfg.Tenable.MaxPages,
 		cfg.Tenable.Timeout,
 		cfg.Tenable.InsecureSkipVerify,
 		cfg.Tenable.RetryMaxAttempts,

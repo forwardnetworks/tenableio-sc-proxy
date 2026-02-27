@@ -215,9 +215,24 @@ func (s *Server) loadRows(ctx context.Context, creds auth.Credentials) ([]forwar
 			}
 			return nil, err
 		}
-		rows := transform.ToSumipRows(hosts)
+		rows, tstats := transform.ToSumipRowsWithStats(hosts, transform.Options{
+			DedupeByIP: s.cfg.Tenable.DedupeByIP,
+		})
 		if s.cfg.Log.Diagnostics {
-			s.logger.Info("upstream fetch success", "request_id", middleware.GetReqID(ctx), "access_key_hash", cacheKey, "hosts", len(hosts), "rows", len(rows), "duration_ms", time.Since(start).Milliseconds())
+			s.logger.Info(
+				"upstream fetch success",
+				"request_id", middleware.GetReqID(ctx),
+				"access_key_hash", cacheKey,
+				"hosts", len(hosts),
+				"rows", len(rows),
+				"duration_ms", time.Since(start).Milliseconds(),
+				"dedupe_by_ip", s.cfg.Tenable.DedupeByIP,
+				"dq_input_rows", tstats.InputRows,
+				"dq_output_rows", tstats.OutputRows,
+				"dq_drop_invalid_ip", tstats.DroppedInvalidIP,
+				"dq_drop_negative_severity", tstats.DroppedNegativeSeverity,
+				"dq_duplicates_merged", tstats.DuplicatesMerged,
+			)
 		}
 		return rows, nil
 	})

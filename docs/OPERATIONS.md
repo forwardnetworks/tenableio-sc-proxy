@@ -25,6 +25,19 @@ When onboarding new credentials or debugging failures:
 
 This logs request lifecycle, source-IP and allowlist rejects, upstream latency/failures, and cache path decisions without exposing raw API keys.
 
+## Data Gathering Controls
+
+- `tenable.page_limit`: upstream assets per request page (default `5000`).
+- `tenable.max_pages`: upper bound on page fetches per run (default `200`).
+- `tenable.dedupe_by_ip`: merges duplicate assets by IP before building `sumip` rows.
+
+With diagnostics enabled, logs include per-run data quality counters:
+
+- parsed assets
+- fallback parsing usage for score/severity fields
+- invalid-IP drops
+- duplicate merges (when dedupe is enabled)
+
 ## Common Failure Modes
 
 ### 401 from proxy
