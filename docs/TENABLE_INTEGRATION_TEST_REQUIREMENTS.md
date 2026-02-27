@@ -1,138 +1,115 @@
-# Tenable.io Integration Test Requirements
+# Forward Tenable.io Integration Validation Requirements
 
 ## Purpose
 
-This document defines the test scope, environment requirements, and acceptance criteria for validating the `tenableio-sc-proxy` solution.
+This document defines a lightweight validation plan to confirm Forward can successfully collect and use Tenable.io data through the provided integration endpoint.
 
-## Solution Under Test
+## Scope
 
-### Component
+### In Scope
 
-- Service: `tenableio-sc-proxy`
-- Role: Translates Tenable.io responses into the Tenable.sc-compatible `sumip` analysis format used by Forward's Tenable SC integration path.
+- Forward configuration for Tenable integration testing
+- End-to-end collection execution from Forward
+- Validation of expected data and operational outcomes in Forward
 
-### Interfaces
+### Out of Scope
 
-- Inbound from collector/integration client:
-  - `POST /rest/analysis`
-  - Auth via `x-apikey` header (`accesskey=...; secretkey=...;`)
-- Operational endpoints:
-  - `GET /healthz`
-  - `GET /readyz`
-- Outbound to Tenable.io:
-  - Vulnerability/workbench API calls over HTTPS
-
-### Security Controls Implemented by Proxy
-
-- Access-key allowlist (`security.allowed_access_keys`)
-- Source CIDR allowlist (`security.allowed_source_cidrs`)
-- TLS termination with cert/key management
-- Optional diagnostics mode that avoids logging raw API keys
+- Internal implementation details of the integration endpoint
+- Endpoint service design, deployment, or component-level behavior
 
 ## Test Objectives
 
-1. Validate successful end-to-end integration between Forward workflow and Tenable.io through the proxy.
-2. Confirm security controls block unauthorized credentials and unauthorized source IPs.
-3. Confirm operational reliability behavior, including cache and stale-response handling.
-4. Validate observability and evidence capture for production onboarding.
+1. Verify Forward can authenticate and run a Tenable collection successfully.
+2. Verify expected Tenable-derived results are visible in Forward.
+3. Verify repeated runs are stable and produce consistent results.
 
 ## Environment Requirements
 
 ### Systems
 
-- One Linux host for `tenableio-sc-proxy`
-- One Forward collector/integration client host
-- Access to a Tenable.io tenant with test data
+- One Forward instance with collector access
+- One Tenable.io test tenant with representative test data
+- One integration endpoint URL provided to the test team
 
 ### Network
 
-- HTTPS connectivity from proxy host to Tenable.io APIs
-- HTTPS connectivity from collector to proxy (`/rest/analysis`)
-- Firewall rules permitting only approved test sources
+- Forward collector can reach the provided endpoint over HTTPS
+- Forward platform/collector paths required for normal collection execution are reachable
 
-### Configuration Baseline
+### Credentials and Access
 
-- Use `config.example.yaml` as hardened baseline
-- `dev.test_mode_enabled=false`
-- Populate `security.allowed_access_keys` with test access key IDs
-- Populate `security.allowed_source_cidrs` with approved source ranges
-- Configure TLS certificate trust on test collector host
+- Forward integration credentials available for test use
+- Tenable.io credentials/API access approved for test scope
+- Required user roles in Forward to configure and run the integration
 
-## External Tester Inputs Required Before Test Start
+## Inputs Required Before Testing
 
-1. Approved test point-of-contact list and escalation contacts.
-2. Approved source IP/CIDR ranges for integration test traffic.
-3. Tenable.io test account/API credential policy and key rotation rules.
-4. Data classification/handling constraints for logs, captures, and exported evidence.
-5. Required retention period and approved storage location for test artifacts.
-6. Formal definition of pass/fail threshold for pilot acceptance.
+1. Endpoint connection details (URL, TLS trust expectations, and any certificate requirements).
+2. Test account/credential handling procedure (including who rotates or revokes after test).
+3. Approved test dataset scope in Tenable.io.
+4. Success criteria for pilot acceptance.
+5. Point-of-contact list for test execution and issue escalation.
 
-## Test Cases
+## Forward Validation Procedure
 
-### TC-01: Health and Readiness
+### Step 1: Pre-Flight Checks
 
-- Verify `GET /healthz` returns success.
-- Verify `GET /readyz` returns success with hardened config.
+- Confirm credentials are valid.
+- Confirm Forward can reach the integration endpoint.
+- Confirm collection schedule or manual trigger method is defined.
 
-### TC-02: Authorized End-to-End Query
+### Step 2: Configure Integration in Forward
 
-- Send valid `POST /rest/analysis` request through integration client.
-- Confirm translated response contains expected `sumip`-compatible rows.
+- Enter provided endpoint URL in the Tenable integration settings.
+- Configure required credentials in Forward.
+- Save and validate configuration syntax/connection status.
 
-### TC-03: Unauthorized Credential Rejection
+### Step 3: Execute Collection
 
-- Use invalid or non-allowlisted access key.
-- Expect rejection (`401`) and diagnostic reason in logs.
+- Run a manual collection (or wait for scheduled run).
+- Capture collection start/end times and run identifier.
 
-### TC-04: Unauthorized Source Rejection
+### Step 4: Validate Results in Forward
 
-- Send request from non-allowlisted source.
-- Expect rejection (`403`) and diagnostic reason in logs.
+- Confirm collection run completes without fatal errors.
+- Confirm expected Tenable-derived entities/results are present.
+- Confirm record counts and key fields are within expected tolerance.
 
-### TC-05: Upstream Failure and Stale Behavior
+### Step 5: Re-Run for Stability
 
-- Simulate Tenable.io unavailability.
-- Confirm `STALE` cache behavior is used when within `reliability.max_stale`.
-- Confirm failure behavior when stale cache is unavailable or expired.
+- Execute at least one additional run.
+- Confirm no unexpected regressions in completion status or data quality.
 
-### TC-06: Logging and Evidence Adequacy
+## Optional Extended Checks
 
-- Enable diagnostics (`log.level=debug`, `log.diagnostics=true`).
-- Validate logs include lifecycle, upstream status, and cache outcome without raw key disclosure.
+- Invalid credential test to verify expected authentication failure path.
+- Temporary upstream unavailability test to verify expected error visibility.
+- Performance sampling for runtime and data volume baselines.
 
 ## Entry Criteria
 
-- Required pre-test inputs completed and approved.
-- Environment deployed and reachable.
-- Test credentials provisioned and validated.
-- Time window and personnel availability confirmed.
+- Inputs and contacts are confirmed.
+- Environment and credentials are ready.
+- Test window is approved.
 
 ## Exit Criteria
 
-- All required test cases executed.
-- No unresolved high-severity defects.
-- Evidence package delivered and accepted by program stakeholders.
-- Any open low/medium issues tracked with remediation owner and due date.
+- Required Forward validation steps complete successfully.
+- Evidence package is captured and reviewed.
+- Any open defects have owner, severity, and follow-up date.
 
 ## Required Evidence Artifacts
 
-- Config snapshot (with secrets redacted)
-- Health/readiness command output
-- Request/response samples for pass/fail cases
-- Proxy logs for each test case
-- Issue log with defect severity and disposition
-- Final acceptance summary
-
-## Open Items for Review
-
-- Confirm required API scope minimums for Tenable.io test credentials.
-- Confirm whether synthetic vulnerability data is required vs. production-like masked data.
-- Confirm exact compliance reporting format expected for sign-off.
+- Forward integration configuration snapshot (secrets redacted)
+- Collection run IDs/status screenshots or exports
+- Data validation notes (what was expected vs what was observed)
+- Error details for any failed test step
+- Final pass/fail summary
 
 ## Approval
 
 - Test Lead: `TBD`
-- Integration Owner: `TBD`
+- Forward Integration Owner: `TBD`
 - Security Reviewer: `TBD`
 - Planned Test Window: `TBD`
-- Document Version: `v0.1`
+- Document Version: `v0.2`
