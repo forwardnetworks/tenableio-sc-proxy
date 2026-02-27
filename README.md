@@ -56,6 +56,11 @@ Diagnostics mode logs:
 - cache behavior (`HIT|MISS|STALE|DEV|NONE`)
 - end-to-end request duration
 
+## Documentation
+
+- Testing requirements template: `docs/TENABLE_INTEGRATION_TEST_REQUIREMENTS.md`
+- Operations runbook: `docs/OPERATIONS.md`
+
 ## Commands
 
 - `proxy run --config <path>`
